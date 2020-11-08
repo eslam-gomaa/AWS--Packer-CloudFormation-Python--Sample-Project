@@ -22,6 +22,7 @@
 ```bash
 su root # Important for installing somedependencies - Like aws-cli (If Needed)
 
+tar -xvf packer.tar.gz
 chmod +x packer
 chmod +x build.py
 
