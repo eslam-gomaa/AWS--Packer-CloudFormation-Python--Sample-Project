@@ -1,0 +1,8 @@
+{
+  "ak": "{{env `AWS_ACCESS_KEY_ID`}}",
+  "sk": "{{env `AWS_SECRET_ACCESS_KEY`}}",
+  "aws_region": "{{env `AWS_DEFAULT_REGION`}}",
+  "ami_id": "ami-0c94855ba95c71c99",
+  "username": "ec2-user"
+}
+

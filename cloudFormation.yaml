@@ -1,0 +1,423 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  AmiID:
+    Type: String
+    Description: AMI ID -- Passed from packer
+
+Resources:
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'false'
+      #InstanceTenancy: dedicated
+
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags:
+        - Key: "Application"
+          Value:
+            Ref: "AWS::StackName"
+        - Key: "Network"
+          Value: "Public"
+        - Key: "Name"
+          Value: !Join
+            - ''
+            - - !Ref "MyVPC"
+              - '-IGW'
+
+  AttachGateway:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      VpcId:
+        Ref: "MyVPC"
+      InternetGatewayId:
+        Ref: "InternetGateway"
+
+  SubnetPublic1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: "us-east-1a"
+      #Tags:
+      #  - Key:
+      #    Value:
+
+  SubnetPublic2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      MapPublicIpOnLaunch: true
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: "us-east-1b"
+      #Tags:
+      #  - Key:
+      #    Value:
+
+  PublicRouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId:
+        Ref: "MyVPC"
+      Tags:
+        - Key: "Application"
+          Value:
+            Ref: "AWS::StackName"
+        - Key: "Network"
+          Value: "Public"
+        - Key: "Name"
+          Value: !Join
+            - ''
+            - - !Ref "MyVPC"
+              - '-public-route-table'
+
+  PublicRoute:
+    Type: "AWS::EC2::Route"
+    DependsOn: "AttachGateway"
+    Properties:
+      RouteTableId:
+        Ref: "PublicRouteTable"
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId:
+        Ref: "InternetGateway"
+
+  PublicSubnetRouteTableAssociation1:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId:
+        Ref: "SubnetPublic1"
+      RouteTableId:
+        Ref: "PublicRouteTable"
+
+  PublicSubnetRouteTableAssociation2:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId:
+        Ref: "SubnetPublic2"
+      RouteTableId:
+        Ref: "PublicRouteTable"
+
+
+  SubnetPrivate1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: "us-east-1a"
+      #Tags:
+      #  - Key:
+      #    Value:
+
+  SubnetPrivate2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: "us-east-1b"
+      #Tags:
+      #  - Key:
+      #    Value:
+
+  ElasticIP1:
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: "vpc"
+
+  NATGateway1:
+    Type: "AWS::EC2::NatGateway"
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+          - "ElasticIP1"
+          - "AllocationId"
+      SubnetId:
+        Ref: "SubnetPublic1"
+
+  ElasticIP2:
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: "vpc"
+
+  NATGateway2:
+    Type: "AWS::EC2::NatGateway"
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+          - "ElasticIP2"
+          - "AllocationId"
+      SubnetId:
+        Ref: "SubnetPublic2"
+
+  PrivateRouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId:
+        Ref: "MyVPC"
+      Tags:
+        - Key: "Name"
+          Value: !Join
+            - ''
+            - - !Ref "MyVPC"
+              - '-private-route-table'
+
+  PrivateRouteToInternet:
+    Type: "AWS::EC2::Route"
+    Properties:
+      RouteTableId:
+        Ref: "PrivateRouteTable"
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId:
+        Ref: "NATGateway1"
+
+  PrivateSubnetRouteTableAssociation1:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId:
+        Ref: "SubnetPrivate1"
+      RouteTableId:
+        Ref: "PrivateRouteTable"
+
+  PrivateSubnetRouteTableAssociation2:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId:
+        Ref: "SubnetPrivate2"
+      RouteTableId:
+        Ref: "PrivateRouteTable"
+
+  SGELB:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable 80, 443, 22 Ports
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp # NOT needed for our case
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '22'  # Normally, shouldn't be allowed from anywhere.
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+
+
+  SGEC2:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable 80, 443 Ports
+      VpcId: !Ref MyVPC
+
+  SGEC2Ingress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SGEC2
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      SourceSecurityGroupId: !GetAtt SGELB.GroupId
+
+  SGEC2Ingress2:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SGEC2
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !GetAtt SGELB.GroupId
+
+  WebAppLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !Ref AmiID
+      InstanceType: t2.micro
+      KeyName: us-east-1_key
+      UserData:
+        Fn::Base64:
+          !Sub |
+          #!/bin/bash -x
+
+          sudo yum install -y stress
+
+          sudo echo "<h2>Website is working</h2> <br> <br> <b>Hostname:</b> `hostname`<br> <br> <b>IP:</b> `ip  -f inet a show eth0| grep inet| awk '{ print $2}' | cut -d/ -f1`" >/usr/share/nginx/html/index.html
+
+          # Deny all incomming traffic
+          iptables -P INPUT DROP
+          # Allow Returned traffic (Allow SYN ACK) that's comming in
+          iptables -I INPUT 1 -m state --state ESTABLISHED,RELATED -j ACCEPT
+          # Open SSH From the Bastion Host (Private IP)
+          iptables -I INPUT 2 -p tcp -s "${EC2public.PrivateIp}" --dport 22 -j ACCEPT
+          # Open HTTP From anywhere
+          iptables -I INPUT 3 -p tcp --dport 80 -j ACCEPT
+
+          sudo iptables-save > /etc/iptables-rules
+
+          # Stressing the CPU
+          sudo stress --cpu  16 --timeout 180
+      SecurityGroups:
+        - Ref: SGEC2
+
+  WebAppGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      Cooldown: 10 # The amount of time, in seconds, after a scaling activity completes before another scaling activity can start. The default value is 300.
+      VPCZoneIdentifier:
+        - !Ref SubnetPrivate1
+        - !Ref SubnetPrivate2
+      LaunchConfigurationName: !Ref WebAppLaunchConfig
+      MaxSize: 3
+      MinSize: 1
+      DesiredCapacity: 2
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 60
+      TargetGroupARNs:
+        - Ref: EC2TargetGroup
+
+  # For Testing (In a Private subnet)
+  #EC2Instance:
+  #  Type: 'AWS::EC2::Instance'
+  #  Properties:
+  #    NetworkInterfaces:
+  #      - SubnetId: !Ref SubnetPrivate1
+  #        DeviceIndex: "0"
+  #        GroupSet:
+  #          - !Ref SGEC2
+  #    InstanceType: t2.micro
+  #    KeyName: us-east-1_key
+  #    ImageId: 'ami-0c94855ba95c71c99'
+
+  EC2public:
+   Type: 'AWS::EC2::Instance'
+   Properties:
+      NetworkInterfaces:
+        - SubnetId: !Ref SubnetPublic1
+          AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          GroupSet:
+            - !Ref SGELB
+      InstanceType: t2.micro
+      KeyName: us-east-1_key
+      ImageId: 'ami-0c94855ba95c71c99'
+
+  EC2TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckPort: 80
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 5
+      Matcher:
+        HttpCode: '200'
+      Name: EC2TargetGroup
+      Port: 80
+      Protocol: HTTP
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '300'
+      UnhealthyThresholdCount: 3
+      VpcId:
+        Ref: MyVPC
+      Tags:
+        - Key: Name
+          Value: EC2TargetGroup
+        - Key: Port
+          Value: 80
+
+# ELB (ALB)
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn:
+            Ref: EC2TargetGroup
+      LoadBalancerArn:
+          Ref: ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Subnets:
+      - Ref: SubnetPublic1
+      - Ref: SubnetPublic2
+      SecurityGroups:
+      - Ref: SGELB
+    DependsOn:
+      - InternetGateway
+      - AttachGateway
+
+  ScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref WebAppGroup
+      Cooldown: '1'
+      ScalingAdjustment: 1
+
+  ScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref WebAppGroup
+      Cooldown: '1'
+      ScalingAdjustment: -1
+
+
+  CPUAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      EvaluationPeriods: 1
+      Statistic: Average
+      Threshold: 70
+      AlarmDescription: Trigger an alarm if CPU higher than 70% for 60 seconds
+      Period: 60
+      AlarmActions:
+        - Ref: ScaleUpPolicy
+      Namespace: AWS/EC2
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref WebAppGroup
+      ComparisonOperator: GreaterThanThreshold
+      MetricName: CPUUtilization
+
+  CPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      EvaluationPeriods: 1
+      Statistic: Average
+      Threshold: 30
+      AlarmDescription: Trigger an alarm if CPU higher than 70% for 60 seconds
+      Period: 60
+      AlarmActions:
+        - Ref: ScaleDownPolicy
+      Namespace: AWS/EC2
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref WebAppGroup
+      ComparisonOperator: LessThanOrEqualToThreshold
+      MetricName: CPUUtilization
+
+Outputs:
+  LBName:
+    Description: The DNS Name of the ALB
+    Value:
+      Fn::Join: [ "", [ "http://", !GetAtt ApplicationLoadBalancer.DNSName ] ]
+  PublicIP:
+    Description: Bastion host Public IP
+    Value: !GetAtt [ EC2public, PublicIp ]
+  ASGName:
+    Description: Name of the ASG
+    Value: !Ref WebAppGroup

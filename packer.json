@@ -1,0 +1,29 @@
+{
+  "builders": [
+    {
+    "type": "amazon-ebs",
+    "access_key": "{{user `ak`}}",
+    "secret_key": "{{user `sk`}}",
+    "region": "{{user `aws_region`}}",
+    "instance_type": "t2.micro",
+    "ssh_username": "{{user `username`}}",
+    "source_ami": "{{user `ami_id`}}",
+    "ami_name": "myami-{{isotime | clean_resource_name}}",
+    "ami_description": "AMI created by Packer",
+    "tags": {
+				"role": "WebServer",
+                "env":  "testing"
+			}
+  }
+  ],
+    "provisioners" : [
+    {
+      "type": "shell",
+      "script": "./scripts/install_ansible.sh"
+    },
+    {
+      "type": "ansible-local",
+      "playbook_file": "./scripts/install_nginx.yml"
+    }
+  ]
+}

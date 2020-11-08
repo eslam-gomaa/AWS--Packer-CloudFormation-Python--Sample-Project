@@ -1,0 +1,35 @@
+- hosts: localhost
+  become: yes
+  tasks:
+    - name: Install nginx
+      yum:
+        name: nginx
+        state: present
+
+    - name: Enable nginx service
+      service:
+        name: nginx
+        state: started
+        enabled: true
+
+#    - name: Modifying index.html
+#      shell:
+#        cmd: |
+#          sudo echo "<h2>Website is working</h2> <br> <br> <b>Hostname:</b> `hostname`<br> <br> <b>IP:</b> `ip  -f inet a show eth0| grep inet| awk '{ print $2}' | cut -d/ -f1`" >/usr/share/nginx/html/index.html
+#          # Modifying it here; puts the info of Packer instance, so we need to add it in user-data
+
+    - name: Install IPtables
+      yum:
+        name: iptables
+        state: present
+
+    - name: Initialize IPtables to load rules on boot
+      shell:
+        cmd: |
+          sudo iptables -F
+          sudo touch /etc/iptables-rules
+          sudo chmod +x /etc/rc.d/rc.local
+          sudo cat << EOF >> /etc/rc.d/rc.local
+          iptables-restore < /etc/iptables-rules
+          EOF
+          sudo chmod 777  /etc/iptables-rules
