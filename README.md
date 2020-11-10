@@ -4,8 +4,9 @@
 **The attached code does the following:**
 
 * Creates an AMI image with Packer
-* Builds an infrastructure with CloudFormation
+* Builds an infrastructure with CloudFormation (EC2, ALB, ASG)
 * Perform Live testing for ASG Scaling UP
+
 
 ---
 
